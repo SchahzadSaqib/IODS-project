@@ -9,7 +9,7 @@ library(tidyverse)
 library(here)
 
 
-#### read dat into the RStudio environment ####
+#### read data into the RStudio environment ####
 
 #' read data
 lrn14 <- read.table(
