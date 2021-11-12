@@ -1,13 +1,97 @@
-# Insert chapter 2 title here
+---
+output:
+  html_document: default
+  pdf_document: default
+---
 
-*Describe the work you have done this week and summarize your learning.*
-
-- Describe your work and results clearly. 
-- Assume the reader has an introductory course level understanding of writing and reading R code as well as statistical methods.
-- Assume the reader has no previous knowledge of your data or the more advanced methods you are using.
+# Exercise 2: Data analysis (Regression and model validation)
 
 ```{r}
 date()
 ```
 
-Here we go again...
+### 1. Data exploration
+
+```{r message=FALSE, warning=FALSE}
+library(tidyverse)
+
+#' read in data for analysis
+lrn14 <- read.csv(here::here("data", 
+                             "lrn14_summ.csv")) %>%
+  dplyr::select(gender, everything()) #' reorder columns
+
+#' take a look at the data
+dplyr::glimpse(lrn14)
+```
+
+The data comes from the international survey of Approaches to Learning, supported by the Teachers' Academy funding for KV in 2013-2015. The data consists of 166 individuals and 7 variables. There are two descriptive variables: age and gender, and 5 variables that represent the cumulative results of the questionnaires in the survey. These are **"points"** (total exam points for each individual), **"attitude"** (global attitude towards statistics, cumulative sum of 10 questions ranking from 1-5), **"deep"** (a set of questions targeting the deep approach to learning), **"stra"** (strategic approach to learning), and **"surf"** (surface approach to learning).
+
+Further details and explanations regarding this dataset can be found [here](https://www.mv.helsinki.fi/home/kvehkala/JYTmooc/JYTOPKYS3-meta.txt)
+
+### 2. Graphical overview and summaries
+
+```{r fig.height=5, fig.width=10, message=FALSE, warning=FALSE}
+library(GGally)
+
+#' plot grahic summary of variables
+GGally::ggpairs(lrn14, 
+                mapping = aes(col = gender, 
+                              fill = gender,
+                              alpha = 0.2), 
+                lower = list(combo = GGally::wrap("facethist", 
+                                                  bins = 20))) +
+  #' assign fill and colour
+  viridis::scale_colour_viridis(option = "G",
+                                end = 0.8,
+                                discrete = T) +
+  viridis::scale_fill_viridis(option = "G",
+                              end = 0.8,
+                              discrete = T)
+
+```
+
+From the descriptive variables we can observe that there was a higher proportion of females in the participants and that the average age of the participants was \~20-25. There are two pairs of variables that correlate: 1) Points and attitude: ***0.422***, which shows that higher exam points are correlated to better attitude towards statistics and 2) deep and surf: ***-0.324,*** which shows that deep learning approaches are negatively correlated with surface approaches.
+
+### Regression mode and validation
+
+Using exam points (points) as our dependent variable, we will fit a linear model to determine which independent variables are most crucial in explain the distribution of exam points in the dataset. Attitude is the first choice since it was seen to be highly correlated with exam points. We also add the variables surf and stra to the model since they are also seen to be marginally correlated.
+
+```{r}
+#' linear model
+lm_mdl <- stats::lm(formula = Points ~ Attitude + surf + stra, 
+                    data = lrn14)
+
+#' model summary
+summary(lm_mdl)
+```
+
+As expected, attitude is statistically significant (p-value 1.93e-08). The variables surf and stra however so seem to be significant. This model explains \~19% (R2 0.1927) of the exam point distribution. Next, we will remove the non-significant variables from the model.
+
+```{r}
+#' linear model
+lm_mdl <- stats::lm(formula = Points ~ Attitude, 
+                    data = lrn14)
+
+#' summary
+summary(lm_mdl)
+
+```
+
+Our new model still explains \~19% of the distribution (R2 = 0.1856) and attitude is statistically significant.
+
+## Diagnostic plots
+
+Next, we validate our model by plotting some diagnostics plots
+
+```{r fig.height=10, fig.width=5}
+#' diagnostic plots
+par(mfrow = c(3, 1))
+plot(lm_mdl, which = c(1,2,5))
+
+```
+
+**Residuals vs Fitted plot:** These plots illustrated the patterns of the residuals. While using a linear model, it is crucial to know that the residuals to not exhibit any non-linear patterns which would need alternative model to capture. The residuals look fairly linear in our plot, which would indicated that the linear model was the correct choice.
+
+**Normal Q-Q plot:** The plot illustrates whether the residuals are normally distributed. They should roughly follow the vertical line, with some room for deviations in the tail end. These residuals seem normally distributed with a few potential outliers.
+
+**Residuals vs Leverage plot:** The plot indicates whether there are standout samples that are highly influential towards the overall distribution and regression analysis reuslts. Such cases/samples would cross dashed lines in the upper and lower right corners of the plot, which represent the Cooks distance. No such instances are observed in our plots, which means there are no highly influential samples present in our data.
