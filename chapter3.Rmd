@@ -1,0 +1,210 @@
+---
+title: "Exercise 3: Data analysis"
+output: html_document
+---
+
+# Exercise 3: Data analysis (Logistic regression)
+
+This data set comes from a Portuguese study titled *"Using data mining to predict secondary school student performance".* The data is collected from two Portuguese secondary schools and consists of descriptive attributes of students personal lives as well their performance in school, measured by their average grade performance. Further details about the study and the data set can be seen [here](http://www3.dsi.uminho.pt/pcortez/student.pdf) and [here](https://archive.ics.uci.edu/ml/datasets/Student+Performance).
+
+Lets take a look at the data itself
+
+```{r}
+
+#' load main library
+library(tidyverse)
+
+#' read in data
+stu_aggr <- read.csv(here::here("data", 
+                                "stu_aggr.csv"))
+
+#' check the structure and dimensions
+dplyr::glimpse(stu_aggr)
+
+```
+
+As we can see, there are **370** student, and 47 characteristics defined for each one. The most important are **G3,** which represents their final grade and **high_use,** which is measure of their alcohol intake during the week. Our research question is whether an increase in alcohol intake is associated to the students overall performance and/or is significantly associated to certain variables.
+
+Lets first take a look at the distribution of the variables:
+
+```{r fig.height=10, fig.width=10}
+
+#' removing duplicated and aggregated columns 
+stu_aggr_clean <- stu_aggr %>%
+  dplyr::select(!ends_with(c(".mat", ".por")), 
+                -Dalc, 
+                -Walc)
+
+#' plot distributions
+plot_vars <- stu_aggr_clean %>%
+  gather() %>%
+  ggplot2::ggplot(., aes(value, fill = key)) +
+  ggplot2::facet_wrap(key ~., scales = "free") +
+  ggplot2::geom_bar(show.legend = F) + 
+  ggplot2::theme_minimal() +
+  viridis::scale_fill_viridis(option = "F", 
+                              discrete = T)
+plot_vars
+  
+```
+
+Looking at these distributions, we can select 4 variables that could potentially play a role in increased alcohol intake and see whether they come out to be statistically significant. Lets pick the following:
+
+**goout:** The frequency of going out with friends (1 - very low to 5 - very high).
+
+**sex:** students sex (M - male, F - female)
+
+**famrel:** quality of family relationships (1 - very bad to 5 - very good)
+
+**paid:** extra paid classes within the course subject (Math or Portuguese)
+
+```{r}
+
+vars_sel <- c("goout", 
+          "famrel",
+          "sex", 
+          "paid")
+
+to.plot <- stu_aggr_clean %>%
+  dplyr::select(vars_sel[1:2], high_use) %>%
+  tidyr::pivot_longer(cols = -high_use) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(name = factor(name, levels = c(unique(name))))
+
+
+ggplot2::ggplot(to.plot, aes(x = high_use, 
+                             y = value, 
+                             fill = high_use)) +
+  ggplot2::facet_wrap(name ~., scales = "free") +
+  ggplot2::geom_jitter(aes(colour = high_use), 
+                       show.legend = F) +
+  ggplot2::geom_boxplot(show.legend = F) +
+  viridis::scale_fill_viridis(option = "G",
+                                begin = 0.4,
+                                end = 0.95,
+                                discrete = T) +
+   viridis::scale_colour_viridis(option = "G",
+                                begin = 0.4,
+                                end = 0.95,
+                                discrete = T) +
+  ggplot2::theme_minimal()
+
+
+to.plot <- stu_aggr_clean %>%
+  dplyr::select(vars_sel[3:4], high_use) %>%
+  tidyr::pivot_longer(cols = -high_use) %>%
+  dplyr::arrange(name) %>%
+  dplyr::mutate(name = factor(name, levels = c(unique(name))))
+
+ggplot2::ggplot(to.plot, aes(x = high_use)) +
+  ggplot2::facet_wrap(name ~ ., scales = "free") +
+  ggplot2::geom_bar(aes(fill = value)) +
+  viridis::scale_fill_viridis(option = "G", 
+                              discrete = T, 
+                              begin = 0.4, 
+                              end = 0.9) +
+  ggplot2::theme_minimal()
+
+```
+
+```{r}
+
+for (sub in 1:length(vars_sel)) {
+  to.summ <- stu_aggr_clean %>%
+    dplyr::group_by(high_use, !!!syms(vars_sel[sub])) %>%
+    dplyr::summarise(n = n(), mean_G3 = mean(G3)) %>%
+    dplyr::arrange(!!!vars_sel[sub])
+  print(to.summ)
+}
+
+```
+
+As we can see from the plots and tables, low family relations and high frequency of going out with friends are associated with increased alcohol consumption. Males were also more likely to consume more alcohol then females. Extra paid courses does not seem to show any trends, but may become clearer within the model.
+
+Lets use all 4 variables in a logistic model for our response variable - high_use
+
+```{r}
+
+#' fit model
+glm.1 <- stats::glm(high_use ~ sex + goout + famrel + paid, 
+                    data = stu_aggr_clean, 
+                    family = "binomial")
+
+#' summarise
+summary(glm.1)
+
+#' extract coefficients
+coef(glm.1)
+
+#' extract Odds ratios
+OR <- coef(glm.1) %>%
+  exp
+
+#' extract confidence intervals
+CI <- confint(glm.1) %>%
+  exp
+
+#' create table
+cbind(OR, CI)
+```
+
+As expected, sex (male), going out with friends, and family relations are important factors in explaining increased alcohol consumption. There is a positive relation with high_use and going out and a negative relation between high_use and better family relations.
+
+The odds ratios is the probability of success over probability of failure. Once again, these show the higher proportion of alcohol consumption among males, going out, and decreasing family relations.
+
+Next, we predict the results (high_use) using our model and observe its accuracy it assigning the correct outcomes.
+
+```{r}
+#' predict and subset
+stu_aggr_wprobs <- stu_aggr_clean %>%
+  dplyr::mutate(probs = predict(glm.1, type = "response"), 
+                preds = probs > 0.5) %>%
+  dplyr::select(high_use, !!!vars_sel, probs, preds)
+tail(stu_aggr_wprobs, 10)
+
+#' confusion matrix
+table(high_use = stu_aggr_wprobs$high_use, 
+      preds = stu_aggr_wprobs$preds)
+```
+
+Lets now determine the predictive power of our model against randomly guessing the outcome. To do this we calculate the mean incorrectly classified outcomes with different probabilities. This serves as a penalty and the lower this value the better.
+
+```{r}
+#' defining the loss function
+loss_func <- function(class, prob) {
+  n_wrong <- abs(class - prob) > 0.5
+  mean(n_wrong)
+}
+
+#' probabiltiy of high use is 1 for each individual
+loss_func(class = stu_aggr_wprobs$high_use,
+          prob = 1)
+
+#' probabiltiy of high use is 0 for each individual
+loss_func(class = stu_aggr_wprobs$high_use,
+          prob = 0)
+
+#' probabiltiy of high use are taken from the model for each 
+#' individual
+loss_func(class = stu_aggr_wprobs$high_use,
+          prob = stu_aggr_wprobs$probs)
+```
+
+So, our model has the lowest penalty compared to randomly guessing.
+
+Next, lets see how our model performs on randomized subsets of our data, once again measuring the mean incorrectly classified outcomes as the measure for performance
+
+```{r}
+#' cross validation
+library(boot)
+
+#' cross-validation
+stu_aggr_cv <- boot::cv.glm(data = stu_aggr_wprobs, 
+                            cost = loss_func, 
+                            glmfit = glm.1, 
+                            K = 10)
+
+stu_aggr_cv$delta[1]
+```
+
+The prediction errors are slightly higher but it stills performs better than guessing.
