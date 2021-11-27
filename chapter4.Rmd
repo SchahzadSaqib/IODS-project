@@ -1,0 +1,205 @@
+---
+title: "Exercise 4: Data analysis"
+output: html_document
+---
+
+# Exercise 4: Clustering and classification
+
+This weeks exercise is all about visually exploring statistical data. The exercise will be based on the Boston data provided with the MASS R package.
+
+First, load the MASS library and read in the data:
+
+```{r}
+library(tidyverse)
+library(MASS)
+
+BSTN <- MASS::Boston
+glimpse(BSTN)
+```
+
+The data consists of 506 entries for 14 variables that describe the housing value of different suburbs of Boston, New York, the air quality, and willingness of occupants to pay for clean air. A detailed description of each variable can be seen [here](https://stat.ethz.ch/R-manual/R-devel/library/MASS/html/Boston.html)
+
+```{r}
+summary(BSTN)
+```
+
+It seems like there is a lot of variation between different towns/suburbs, with the widest ranges being present in crime rates per capita (min: 0.0062, max: 88.98), age (min: 2.9, max: 100), and proportion of residential land zoned for lots over 25,000 sq.ft. (min: 0, max: 100).
+
+Now lets look at the correlations between these variables:
+
+```{r fig.height=10, fig.width=10}
+#' create correlation matrix
+BSTN_cor <- cor(BSTN) %>%
+  round(digits = 2)
+
+#' visualize
+corrplot::corrplot(BSTN_cor, 
+                   type = "upper", 
+                   tl.pos = "d")
+```
+
+As can be observed from the plot, there is high correlation between most of the variables, with the most striking being the positive correlation of nox vs age, negative correlation of nox vs indus, and positive correlation of rad vs tax.
+
+To account for the massive ranges of certain variable and to keep the data comparable, lets scale the variables to center the means around 0.
+
+```{r}
+BSTN_scale <- as.data.frame(scale(BSTN))
+summary(BSTN_scale)
+```
+
+Next, let restructure the crime rate variable to a categorical variable:
+
+```{r}
+#' generate quantiles
+crime_qtls <- quantile(BSTN_scale$crim)
+
+#' create categroical variable
+BSTN_scale_mod <- BSTN_scale %>%
+  dplyr::mutate(crime = cut(crim, 
+             breaks = crime_qtls, 
+             include.lowest = T, 
+             labels = c("low",
+                        "mid_low", 
+                        "mid_high", 
+                        "high"))) %>%
+  dplyr::select(-crim)
+```
+
+With crime as the variable of interest, we divide the data set into training and test sets
+
+```{r}
+#' randomly extract indexes for 80% of the data
+sub <- sample(nrow(BSTN_scale_mod), 
+              size = nrow(BSTN_scale_mod) * 0.8)
+
+#' subset the training set (80%)
+train <- BSTN_scale_mod[sub,]
+
+#' subset the test set (20%)
+test <- BSTN_scale_mod[-sub,]
+
+#' save correct classes
+crt <- test$crime
+
+#' remove crime from test data set
+test <- test %>%
+  dplyr::select(-crime)
+
+
+```
+
+Next, we perform Linear discriminant analysis (LDA) on the training set, which is a dimensionality reduction technique to identify separation within the data based on features/variables.
+
+```{r fig.height=10, fig.width=10}
+#' LDA
+BSTN_lda <- MASS::lda(crime ~ ., data = train)
+BSTN_lda
+
+#' define functions for lda arrows
+lda.arrows <- function(x, myscale = 1, arrow_heads = 0.1, color = "orange", tex = 0.75, choices = c(1,2)){
+  heads <- coef(x)
+  arrows(x0 = 0, y0 = 0, 
+         x1 = myscale * heads[,choices[1]], 
+         y1 = myscale * heads[,choices[2]], col=color, length = arrow_heads)
+  text(myscale * heads[,choices], labels = row.names(heads), 
+       cex = tex, col=color, pos=3)
+}
+
+#' target classes
+tr_crt <- as.numeric(train$crime)
+
+#' plot LDA
+plot(BSTN_lda, 
+     col = tr_crt, 
+     dimen = 2, 
+     pch = tr_crt)
+lda.arrows(BSTN_lda, myscale = 2)
+```
+
+As we can see from the plot, crime rates separate very well between high and mid-low/low, while there is still some separation between the mid_high and low/mid_low categories. Furthermore, the variables rad, nox, and zn seem to be crucial for the separation.
+
+Now lets predict the values on the test data set
+
+```{r}
+#' predict the classes
+BSTN_pred <- predict(BSTN_lda, 
+                     newdata = test)
+
+#' compare against the correct classes
+table(correct = crt, 
+      predicted = BSTN_pred$class)
+
+```
+
+There were some classification errors in the low class, but they were fairly good for the rest.
+
+Next up, we find the distance between the variables and perform k-means clustering
+
+```{r fig.height=15, fig.width=15}
+#' distances
+BSTN_dist <- stats::dist(BSTN_scale)
+
+#' summary
+summary(BSTN_dist)
+
+#' manhattan distance matrix
+BSTN_dist_man <- dist(BSTN_scale, 
+                      method = 'manhattan')
+
+#' summary
+summary(BSTN_dist_man)
+
+#' k-means clustering
+BSTN_km <- stats::kmeans(BSTN_dist, 
+                         centers = 3)
+
+#' visualize
+pairs(BSTN_scale, 
+                col = BSTN_km$cluster)
+```
+
+Now lets determine the optimal k value for k means clustering
+
+```{r fig.height=15, fig.width=15}
+# set.seed
+set.seed(211)
+
+# determine the number of clusters
+k_max <- 10
+
+# calculate the total within sum of squares
+twcss <- sapply(1:k_max, function(k){kmeans(Boston, k)$tot.withinss})
+
+# visualize the results
+qplot(x = 1:k_max, y = twcss, geom = 'line')
+
+# k-means clustering
+km <-kmeans(Boston, 
+            centers = 2)
+
+# plot the Boston dataset with clusters
+pairs(BSTN_scale, 
+      col = km$cluster)
+```
+
+From the q-plot we can see that the most drastic drop in "within cluster sum of squares (WCSS)" is at 2, which indicative of the optimal k value.
+
+Super bonus
+
+```{r}
+model_predictors <- dplyr::select(train, -crime)
+
+# check the dimensions
+dim(model_predictors)
+dim(BSTN_lda$scaling)
+
+# matrix multiplication
+matrix_product <- as.matrix(model_predictors) %*% BSTN_lda$scaling
+matrix_product <- as.data.frame(matrix_product)
+
+
+plotly::plot_ly(x = matrix_product$LD1, y = matrix_product$LD2, z = matrix_product$LD3, type= 'scatter3d', mode='markers', color = train$crime)
+
+```
+
+The plots generally look similar with high crime rates clearly separated from the other groupings.
