@@ -1,0 +1,118 @@
+---
+title: "chapter5"
+output: html_document
+---
+
+# Exercise 5: Dimensionality reduction techniques
+
+For this exercise we will be looking at human development index (HDI) parameters presented by the United nations developments programme to assess the development of countries. Details of the project and explanations of the variables can be found [here](http://hdr.undp.org/en/content/human-development-index-hdi).
+
+First, lets load the data:
+
+```{r}
+library(tidyverse)
+
+#' read in modified file
+human_data <- read.csv(here::here("data", 
+                                  "human.csv"), 
+                       row.names = 1)
+
+#' glimpse
+dplyr::glimpse(human_data)
+
+#' summary
+base::summary(human_data)
+
+#' pairs
+GGally::ggpairs(human_data)
+```
+
+From the summary we can observe the large differences between countries, especially with GNI. Form the visualization we can further see that education and life expectancy at birth are strongly positively correlated with GNI, while both maternal mortality rate and adolescent birth rate and negatively correlated.
+
+Next, we carry out principle component analysis (PCA)
+
+```{r}
+
+#' PCA
+pca <- stats::prcomp(human_data)
+biplot(pca, 
+       choices = 1:2, 
+       cex = c(0.8, 1), 
+       col = c("grey40", "deeppink2"))
+
+```
+
+Looks like most countries are clumped together but a a handful can be seen branching away towards the bottom and left. These might be extreme entries that deviate drastically from average.
+
+Now, lets standardize the variables and try again
+
+```{r}
+
+#' scale the data
+human_data_s <- scale(human_data)
+
+#' glimpse
+base::summary(human_data_s)
+
+#' redo PCA analysis
+pca2 <- stats::prcomp(human_data_s)
+biplot(pca2, 
+       choices = 1:2, 
+       cex = c(0.8, 1), 
+       col = c("grey40", "deeppink2"))
+```
+
+That makes things clearer. The countries are now more clearly distributed and the reason for separation is also much more obvious. The countries branching towards the left corner are mostly deviating due to education status while the ones branching towards the right corner are separated by maternal mortality rate and adolescent birth rate.
+
+Moving things along. Tea! This data comes from the FactoMineR package and contains answers from a questionnaire filled by 300 individuals on their tea consumption, product preception, and personal questions. Details
+
+```{r}
+library(FactoMineR)
+
+#' load data
+data("tea")
+
+#' glimpse
+dplyr::glimpse(tea)
+
+#' clean the data
+tea_time <- tea %>%
+  dplyr::select(Tea,
+                How,
+                how,
+                sugar,
+                where,
+                lunch)
+
+#' summaries
+base::summary(tea_time)
+
+# visualize
+ggplot(gather(tea_time), aes(value)) + facet_wrap("key", scales = "free") + geom_bar() + theme(axis.text.x = element_text(angle = 45, hjust = 1, size = 8))
+
+#' multple correspondence analysis (MCA)
+mca <- MCA(tea_time, graph = FALSE)
+
+#' summary of the model
+summary(mca)
+
+#' visualize MCA
+plot(mca, invisible=c("ind"), habillage = "quali")
+
+#' Biplot
+factoextra::fviz_mca_biplot(mca, label = "var")
+
+#' extra plots from the package
+res.mca <- MCA(tea,
+               quanti.sup= 19,
+               quali.sup = 20:36, 
+               graph = F)
+plot(res.mca,
+     invisible = c("ind", "quali.sup", "quanti.sup"),
+     cex = 0.8)
+
+```
+
+From the plots it seems that Earl grey is usually taken with both milk and sugar, while black and green are not. Tea bags are likely to be bought from chain stores while unpackaged is bought from tea shops.
+
+The last plot shows further categorical variables that provide further insights. Early grey seems to be the tea of choice for breakfast, lunch, pubs, and with friends, while green tea is usually reserved for dinner and privately.
