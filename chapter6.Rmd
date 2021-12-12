@@ -1,0 +1,252 @@
+---
+title: "chapter6"
+output: html_document
+---
+
+# Exercise 6: Analysis of longitudinal data
+
+## 1. Apply Chapter 8 exercises to RATS data
+
+First lets load the RATS data:
+
+```{r}
+
+library(tidyverse)
+
+RATS <- read.csv(file = here::here("data", 
+                                   "RATS.csv"), 
+                 header = TRUE, 
+                 row.names = 1) %>%
+  
+  #' convert categorical variables to factors
+  dplyr::mutate(ID = factor(ID), 
+                Group = factor(Group)) %>%
+  dplyr::glimpse()
+```
+
+And plot to see the general distribution of the data across our categorical variable (Group). These are the groupings used within the study across the 9-week period.
+
+```{r}
+ggplot2::ggplot(RATS, 
+       aes(x = Time, 
+           y = Weight, 
+           color = Group, 
+           group = ID)) +
+  ggplot2::geom_line(aes(linetype = Group)) +
+  ggplot2::scale_x_continuous(name = "Time (days)") +
+  ggplot2::scale_y_continuous(name = "Weight (grams)")
+```
+
+Group 1 stands out. It seems that the weight of the rats in group1 was lower to begin with and weight gain was only marginal over the 9-week period. For groups 2 & 3, the starting weight were higher and they also gained significantly more weight over the same period.
+
+Next, lets standardise the weights:
+
+```{r}
+RATS_st <- RATS %>%
+  dplyr::group_by(Time) %>%
+  dplyr::mutate(Weight_s = (Weight - mean(Weight))/sd(Weight)) %>%
+  dplyr::ungroup() %>%
+  dplyr::glimpse()
+```
+
+Re-plot using the standardised data:
+
+```{r}
+ggplot2::ggplot(RATS_st, aes(x = Time, 
+                            y = Weight_s, 
+                            color = Group, 
+                            group = ID)) +
+  ggplot2::geom_line(aes(linetype = Group)) +
+  ggplot2::scale_x_continuous(name = "Time (days)") +
+  ggplot2::scale_y_continuous(name = "Standardized Weight (grams)")
+```
+
+The standardised data seems to show much lower change in weight over time for all groups
+
+```{r}
+RATS_mod <- RATS_st %>%
+  dplyr::group_by(Group, Time) %>%
+  dplyr::add_tally() %>%
+  dplyr::mutate(WD = factor(WD, levels = unique(WD))) %>%
+  dplyr::group_by(Group, WD) %>%
+  dplyr::summarise(Mean = mean(Weight), se = sd(Weight)/sqrt(n)) %>%
+  dplyr::ungroup()
+
+ggplot2::ggplot(RATS_mod, 
+       aes(x = WD, 
+           y = Mean, 
+           shape = Group)) +
+  ggplot2::geom_line() +
+  ggplot2::scale_linetype_manual(values = c(1,2)) +
+  ggplot2::geom_point(size = 3) +
+  ggplot2::geom_errorbar(aes(ymin = Mean - se, 
+                    ymax = Mean + se, 
+                    linetype="1"), 
+                width=0.3) +
+  ggplot2::theme(legend.position = "right") +
+  ggplot2::scale_y_continuous(name = "Mean(Weight) +/- Se(Weight)")
+```
+
+Here we can see the mean weight per Week and the standard errors. Group 1 looks fairly even while Groups 2 & 3 have fairly wide whiskers for SE, indicating large within group variation.
+
+Lets see if there are any outliers in the data
+
+```{r}
+RATS_mod.2 <- RATS_st %>%
+  dplyr::filter(Time > 0) %>%
+  dplyr::group_by(Group, ID) %>%
+  dplyr::summarise(Mean=mean(Weight) ) %>%
+  dplyr::ungroup()
+
+ggplot2::ggplot(RATS_mod.2, 
+       aes(x = Group, 
+           y = Mean)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::stat_summary(fun = "mean", 
+                        geom = "point", 
+                        shape = 23, 
+                        size = 5, 
+                        fill = "red3") +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_y_continuous(name = "mean (Weight)")
+
+
+```
+
+Looks like group 2 has some outliers on the top end. Lets summarise the data and find out where to add the cutoff to remove the outliers
+
+```{r}
+summary(RATS_mod.2) # 550 would do it 
+
+RATS_mod.3 <- RATS_mod.2 %>% 
+  dplyr::filter(Mean < 550)
+
+ggplot2::ggplot(RATS_mod.3, 
+       aes(x = Group, 
+           y = Mean)) +
+  ggplot2::geom_boxplot() +
+  ggplot2::stat_summary(fun = "mean", 
+                        geom = "point", 
+                        shape = 23, 
+                        size = 5, 
+                        fill = "red3") +
+  ggplot2::theme_minimal() +
+  ggplot2::scale_y_continuous(name = "mean (Weight)")
+```
+
+Now, lets fit a linear model to see whether there any statistically significant differences in the Groups.
+
+```{r}
+lm1 <- stats::lm(Mean ~ Group, 
+                 data = RATS_mod.3)
+stats::anova(lm1)
+```
+
+Looks like there are.
+
+## 2. Apply Chapter 9 exercises to BPRS data
+
+Lets now load the BPRS data into the environment
+
+```{r}
+BPRS <- read.csv(file = here::here("data", 
+                                   "/BPRS.csv"), 
+                                   header = TRUE, 
+                                   row.names = 1) %>%
+  
+  #' convert categorical variables to factors
+  dplyr::mutate(treatment = factor(treatment), 
+                subject = factor(subject)) %>%
+  dplyr::glimpse()
+```
+
+And visualise the general distribution of samples
+
+```{r}
+ggplot2::ggplot(BPRS, 
+       aes(x = Week, 
+           y = BPRS)) +
+  ggplot2::geom_line(aes(linetype = subject)) +
+  ggplot2::scale_x_continuous(name = "Week") +
+  ggplot2::scale_y_continuous(name = "bprs") +
+  ggplot2::facet_grid(. ~ treatment) +
+  ggplot2::theme(legend.position = "none")
+```
+
+From the plots it seems that the distributions are fairly similar and there might not be any differences between treatments 1 & 2.
+
+Lets fit a model and find out:
+
+```{r}
+BPRS.m1 <- stats::lm(BPRS ~ Week + treatment, 
+                    data = BPRS)
+base::summary(BPRS.m1)
+```
+
+Even though treatment does seem to have some effect (Estimate = 0.57), the large p.value indicates that there is no treatment related effects on BPRS.
+
+Random intercept model:
+
+```{r}
+BPRS.m2 <- lme4::lmer(BPRS ~ Week + treatment + (1 | subject), 
+                     data = BPRS, 
+                     REML = F)
+base::summary(BPRS.m2)
+```
+
+Variance is fairly large (47.41) and there is moderate SD (6.885). No fixed effects.
+
+Random intercept and random slope model:
+
+```{r}
+BPRS.m3 <- lme4::lmer(BPRS ~ Week + treatment + (Week | subject), 
+                     data = BPRS, 
+                     REML = FALSE)
+base::summary(BPRS.m3)
+```
+
+Anova for model comparisons:
+
+```{r}
+stats::anova(BPRS.m3, BPRS.m2)
+```
+
+Now lets see how fitted values would look
+
+```{r}
+BPRS.m4 <- lme4::lmer(BPRS ~ Week + treatment + Week*treatment + (Week | subject), 
+                data = BPRS, 
+                REML = F)
+summary(BPRS.m4)
+
+
+# ANOVA
+stats::anova(BPRS.m4, BPRS.m3)
+
+# Earlier plot
+ggplot2::ggplot(BPRS, aes(x = Week, 
+                 y = BPRS, 
+                 group = subject)) +
+  ggplot2::geom_line(aes(linetype = subject)) +
+  ggplot2::scale_x_continuous(name = "Weeks", breaks = seq(0, 60, 20)) +
+  ggplot2::scale_y_continuous(name = "BPRS") +
+  ggplot2::facet_grid(. ~ treatment) +
+  ggplot2::theme(legend.position = "top")
+
+# plot with fitted values
+Fitted <- stats::fitted(BPRS.m4)
+
+BPRS <- BPRS %>%
+  mutate(Fitted)
+
+ggplot2::ggplot(BPRS, aes(x = Week, 
+                 y = Fitted, 
+                 group = subject)) +
+  ggplot2::geom_line(aes(linetype = subject)) +
+  ggplot2::scale_x_continuous(name = "Weeks") +
+  ggplot2::scale_y_continuous(name = "Fitted values") +
+  ggplot2::facet_grid(. ~ treatment) +
+  ggplot2::theme(legend.position = "none")
+```
+
+Initially it did look like the interaction terms (Week:treatment) might have a higher overall effect but it does not seem like the model was improved too much.
